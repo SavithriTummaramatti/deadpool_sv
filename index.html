@@ -1,4 +1,47 @@
 <html>
+<!-- PR-928 PREVIEW OVERRIDE (must stay ABOVE the checkout.js loader) ----------------------------------
+     checkout.js asks staging.xola.com/api/checkoutLinks which checkout URL each button should open.
+     For experience 6afe8db5e917b8a2eb0ba3ec it returns https://x2-checkout.staging.xola.app/flows/mvp?...
+     This shim rewrites that origin to the PR-928 preview so the embedded checkout loads the fix,
+     while the rest of the embed flow (iframe, resize, postMessage) runs through checkout.js as normal.
+     Set PREVIEW_IDS = [] to send EVERY X2 button on this page to the preview.
+     Remove this whole block to go back to plain staging. -->
+<script type="text/javascript">
+    (function () {
+        var STAGING_ORIGIN = "https://x2-checkout.staging.xola.app";
+        var PREVIEW_ORIGIN = "https://pr-928.checkout-preview.staging.xola.app";
+        var PREVIEW_IDS = ["6afe8db5e917b8a2eb0ba3ec"];
+
+        var originalFetch = window.fetch.bind(window);
+        window.fetch = function (input, init) {
+            var url = typeof input === "string" ? input : input && input.url;
+            var request = originalFetch(input, init);
+            if (!url || url.indexOf("/api/checkoutLinks") === -1) return request;
+
+            return request.then(function (res) {
+                return res.clone().json().then(function (body) {
+                    (body.data || []).forEach(function (item) {
+                        if (PREVIEW_IDS.length && PREVIEW_IDS.indexOf(item.id) === -1) return;
+                        (item.checkouts || []).forEach(function (checkout) {
+                            if (checkout.url && checkout.url.indexOf(STAGING_ORIGIN) === 0) {
+                                checkout.url = PREVIEW_ORIGIN + checkout.url.slice(STAGING_ORIGIN.length);
+                                console.info("[PR-928] " + item.id + " (" + checkout.type + ") -> " + checkout.url);
+                            }
+                        });
+                    });
+                    return new Response(JSON.stringify(body), {
+                        status: res.status,
+                        statusText: res.statusText,
+                        headers: res.headers,
+                    });
+                }).catch(function () {
+                    return res;
+                });
+            });
+        };
+    })();
+</script>
+<!-- END PR-928 PREVIEW OVERRIDE ------------------------------------------------------------------- -->
 <script type="text/javascript"> (function() { var co=document.createElement("script");
      co.type="text/javascript"; co.async=true; co.src="https://staging.xola.com/checkout.js";
      var s=document.getElementsByTagName("script")[0]; s.parentNode.insertBefore(co, s); })(); </script>
@@ -95,6 +138,7 @@
     BOOK NOW
   </a>
    <br>
+   <h3>Embedded checkout – seller 6847b9185d9a9c31de0c92df / experience 6afe8db5e917b8a2eb0ba3ec (served from PR-928 preview)</h3>
    <div class="xola-embedded-checkout" data-seller="6847b9185d9a9c31de0c92df" data-version="2" data-experience="6afe8db5e917b8a2eb0ba3ec"></div>
    <br>
   
